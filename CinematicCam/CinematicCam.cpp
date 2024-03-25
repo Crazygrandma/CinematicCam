@@ -14,141 +14,152 @@ void CinematicCam::onLoad()
 {
 	_globalCvarManager = cvarManager;
 	Initialize();
-	cvarManager->registerNotifier("enableGTACam", [this](std::vector<std::string> params) {Enable(); }, "Enables camera control plugin", PERMISSION_ALL);
-	cvarManager->registerNotifier("disableGTACam", [this](std::vector<std::string> params) {Disable(); }, "Disables camera control plugin", PERMISSION_ALL);
 
-	cvarManager->registerCvar("gta_enabled", "0", "Enable GTA Camera", true, true, 0, true, 1)
+	cvarManager->registerCvar("cinematic_cam_enabled", "0", "Enable Cinematic Camera", true, true, 0, true, 1)
 		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
 		cvar.getBoolValue() ? Enable() : Disable();
 			});
 
-	cvarManager->registerCvar("gta_car_lock", "0", "Lock to car", true, true, 0, true, 1)
+	cvarManager->registerCvar("cam_car_lock", "0", "Lock to car", true, true, 0, true, 1)
 		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
 		lockOnCar = cvar.getBoolValue();
 			});
 
-
-	cvarManager->registerCvar("orbit_mode", "0", "Orbit mode", true, true, 0, true, 1)
+	cvarManager->registerCvar("cinematic_camera_mode", "0", "Camera mode", true, true, 0, true, 2)
 		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
-		orbitMode = cvar.getBoolValue();
+		cameraMode = cvar.getIntValue();
 			});
 
-	cvarManager->registerCvar("freecam_mode", "0", "Freecam mode", true, true, 0, true, 1)
-		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
-		freecamMode = cvar.getBoolValue();
-			});
+	cvarManager->registerCvar("CameraHeight", "500", "Set the height of the camera", true);
+	cvarManager->registerCvar("CameraDistance", "1000", "Set the distance relative to the car of the camera", true);
+	cvarManager->registerCvar("CameraOrbitSpeed", "0.10", "Set the speed of the camera", true);
 
-	cvarManager->registerCvar("GTAHeight", "500", "Set the height of the camera", true, true, 0, false);
-	cvarManager->registerCvar("GTADistance", "1000", "Set the distance relative to the car of the camera", true, true, 0, false);
+	cvarManager->registerCvar("CameraFOV", "60", "Set the speed of the camera", true);
 
-
-	//cvarManager->registerCvar("GTAX", "0", "Set the x position relative to the car", true, true, 0, false);
-	//cvarManager->registerCvar("GTAY", "0", "Set the y position relative to the car", true, true, 0, false);
-	//cvarManager->registerCvar("GTAZ", "0", "Set the z position relative to the car", true, true, 0, false);
-
-	//cvarManager->registerCvar("GTAXCamTarget", "0", "Cam Pivot X", true, true, 0, false);
-	//cvarManager->registerCvar("GTAYCamTarget", "0", "Cam Pivot Y", true, true, 0, false);
-	//cvarManager->registerCvar("GTAZCamTarget", "0", "Cam Pivot Z", true, true, 0, false);
-
-	cvarManager->registerCvar("GTAFOV", "90", "Set the FOV of the camera", true, true, 0, false);
-	cvarManager->registerCvar("GTAOrbitSpeed", "0.10", "Set the speed of the camera", true, true, 0, false);
+	cvarManager->registerCvar("CameraXOffset", "0", "Set the xOffset of the camera", true);
+	cvarManager->registerCvar("CameraYOffset", "0", "Set the yOffset of the camera", true);
+	cvarManager->registerCvar("CameraZOffset", "0", "Set the zOffset of the camera", true);
 }
 
 
 
 void CinematicCam::CreateValues()
 {
-
-	if (orbitMode)
+	CarWrapper car = gameWrapper->GetLocalCar();
+	CameraWrapper camera = gameWrapper->GetCamera();
+	if (!car.IsNull() && !camera.IsNull())
 	{
-		float height = cvarManager->getCvar("GTAHeight").getFloatValue();
-		float distance = cvarManager->getCvar("GTADistance").getFloatValue();
-		float speed = cvarManager->getCvar("GTAOrbitSpeed").getFloatValue();
-		CarWrapper car = gameWrapper->GetLocalCar();
-		CameraWrapper camera = gameWrapper->GetCamera();
-		if (!car.IsNull() && !camera.IsNull())
-		{
-			Vector carLocation = car.GetLocation();
-			float angleRadians = timeVal * 3.14 / 180.0;
-			float newX = distance * cos(angleRadians);
-			float newY = distance * sin(angleRadians);
-			float dx = -newX;
-			float dy = -newY;
-			if (lockOnCar) {
-				newX += carLocation.X;
-				newY += carLocation.Y;
-				dx = carLocation.X - newX;
-				dy = carLocation.Y - newY;
+		if (cameraMode == 0) {
+			orbitMode(car, camera);
+		}
+		if (cameraMode == 1) {
+			PlayerControllerWrapper controller = car.GetPlayerController();
+			if (!controller) {
+				return;
 			}
+			ControllerInput input = controller.GetVehicleInput();
+			car.SetVelocity({ 0,0,0 });
 
-			FOCUS = Vector{ newX , newY, height };
-			float dz = -height;
+			freecamPosition.X += -1 * input.Pitch * velocity;
+			freecamPosition.Y += input.Steer * velocity;
+			freecamPosition.Z += input.Throttle * velocity;
 
-			double pitch = atan2(dz, sqrt(dx * dx + dy * dy)) * 32768.0 / 3.14;
-			double yaw = atan2(dy, dx) * 32768.0 / 3.14;
-
-			ROTATION.Pitch = pitch;
-			ROTATION.Yaw = yaw;
-
-			ProfileCameraSettings camSettings = camera.GetCameraSettings();
-			DISTANCE = camSettings.Distance;
-			FOV = camSettings.FOV;
-
-			timeVal += speed;
+			FOCUS = Vector{ freecamPosition.X, freecamPosition.Y, freecamPosition.Z };
 		}
-	}
-	if (freecamMode) {
-		float xpos = cvarManager->getCvar("GTAX").getFloatValue();
-		float ypos = cvarManager->getCvar("GTAY").getFloatValue();
-		float zpos = cvarManager->getCvar("GTAZ").getFloatValue();
-		float xpivotpos = cvarManager->getCvar("GTAXCamTarget").getFloatValue();
-		float ypivotpos = cvarManager->getCvar("GTAYCamTarget").getFloatValue();
-		float zpivotpos = cvarManager->getCvar("GTAZCamTarget").getFloatValue();
-		CarWrapper car = gameWrapper->GetLocalCar();
-		CameraWrapper camera = gameWrapper->GetCamera();
-		if (!car.IsNull() && !camera.IsNull())
-		{
-			Vector carLocation = car.GetLocation();
-			// Camera position
-			float newX = carLocation.X;
-			float newY = carLocation.Y;
-			float newZ = zpos;
-
-			FOCUS = Vector{ newX , newY, newZ };
-
-			// Point camera should look at
-			float lookX = carLocation.X;
-			float lookY = carLocation.Y;
-			float lookZ = 0;
-
-			////// 
-			float dx = lookX - newX;
-			float dy = lookY - newY;
-			float dz = lookZ - newZ;
-
-			double pitch = atan2(dz, sqrt(dx * dx + dy * dy)) * 32768.0 / 3.14;
-			double yaw = atan2(dy, dx) * 32768.0 / 3.14;
-
-			ROTATION.Pitch = pitch;
-			ROTATION.Yaw = yaw;
-			ProfileCameraSettings camSettings = camera.GetCameraSettings();
-			DISTANCE = 0;
-			FOV = camSettings.FOV;
+		if (cameraMode == 2) {
+			windowMode(car, camera);
 		}
 	}
 }
 
-ServerWrapper CinematicCam::GetCurrentGameState()
-{
-	if (gameWrapper->IsInReplay())
-		return gameWrapper->GetGameEventAsReplay().memory_address;
-	else if (gameWrapper->IsInOnlineGame())
-		return gameWrapper->GetOnlineGame();
-	else
-		return gameWrapper->GetGameEventAsServer();
+void CinematicCam::windowMode(CarWrapper car, CameraWrapper camera) {
+
+	float xOffset = cvarManager->getCvar("CameraXOffset").getFloatValue();
+	float yOffset = cvarManager->getCvar("CameraYOffset").getFloatValue();
+	float zOffset = cvarManager->getCvar("CameraZOffset").getFloatValue();
+	float fov = cvarManager->getCvar("CameraFOV").getIntValue();
+
+
+	Vector carLocation = car.GetLocation();
+	Rotator carRotation = car.GetRotation();
+
+	float rotationYaw = carRotation.Yaw * 3.14 / 32768;
+	float rotationPitch = carRotation.Pitch * 3.14 / 32768;
+	float rotationRoll = carRotation.Roll * 3.14 / 32768;
+
+	// Calculate camera position relative to car's orientation
+	float camPosX = carLocation.X +
+		(xOffset * cos(rotationPitch) * cos(rotationYaw)) -
+		(yOffset * (cos(rotationRoll) * sin(rotationYaw) - sin(rotationRoll) * sin(rotationPitch) * cos(rotationYaw))) +
+		(zOffset * (sin(rotationRoll) * sin(rotationYaw) + cos(rotationRoll) * sin(rotationPitch) * cos(rotationYaw)));
+
+	float camPosY = carLocation.Y +
+		(xOffset * cos(rotationPitch) * sin(rotationYaw)) +
+		(yOffset * (cos(rotationRoll) * cos(rotationYaw) + sin(rotationRoll) * sin(rotationPitch) * sin(rotationYaw))) -
+		(zOffset * (sin(rotationRoll) * cos(rotationYaw) - cos(rotationRoll) * sin(rotationPitch) * sin(rotationYaw)));
+
+	float camPosZ = carLocation.Z +
+		(-xOffset * sin(rotationPitch)) +
+		(yOffset * sin(rotationRoll) * cos(rotationPitch)) +
+		(zOffset * cos(rotationRoll) * cos(rotationPitch));
+
+	FOCUS = Vector{ camPosX,camPosY,camPosZ };
+
+	/*FOCUS.X = carLocation.X + xOffset * cos(rotation) - yOffset * sin(rotation);
+	FOCUS.Y = carLocation.Y + xOffset * sin(rotation) + yOffset * cos(rotation);
+	FOCUS.Z = carLocation.Z + zOffset;*/
+
+	ROTATION = Rotator{ carRotation.Pitch, carRotation.Yaw, carRotation.Roll };
+
+	DISTANCE = 0;
+	FOV = fov;
+
+}
+
+void CinematicCam::orbitMode(CarWrapper car, CameraWrapper camera) {
+
+	float height = cvarManager->getCvar("CameraHeight").getFloatValue();
+	float distance = cvarManager->getCvar("CameraDistance").getFloatValue();
+	float speed = cvarManager->getCvar("CameraOrbitSpeed").getFloatValue();
+
+	ProfileCameraSettings camSettings = camera.GetCameraSettings();
+	Vector carLocation = car.GetLocation();
+
+	float newX = distance * cos(timeVal * 3.14 / 180.0);
+	float newY = distance * sin(timeVal * 3.14 / 180.0);
+
+	Vector camPos = { newX,  newY, height };
+
+	auto [pitch, yaw] = lookAt(camPos, Vector{0,0,0});
+	if (lockOnCar) {
+		camPos.X += carLocation.X;
+		camPos.Y += carLocation.Y;
+		camPos.Z += carLocation.Z;
+		auto [pitch, yaw] = lookAt(camPos, carLocation);
+	}
+
+	FOCUS = Vector{ camPos.X , camPos.Y, camPos.Z};
+
+	ROTATION.Pitch = pitch;
+	ROTATION.Yaw = yaw;
+
+	DISTANCE = distance;
+	FOV = camSettings.FOV;
+
+	timeVal += speed;
 }
 
 
+std::pair<float,float> CinematicCam::lookAt(Vector from, Vector to) {
+
+	float dx = to.X - from.X;
+	float dy = to.Y - from.Y;
+	float dz = to.Z - from.Z;
+
+	float pitch = atan2(dz, sqrt(dx * dx + dy * dy)) * 32768.0 / 3.14;
+	float yaw = atan2(dy, dx) * 32768.0 / 3.14;;
+	return std::make_pair(pitch, yaw);
+}
 
 
 //LEAVE THESE UNCHANGED

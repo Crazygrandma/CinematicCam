@@ -23,19 +23,25 @@ private:
 	bool isInRearCam = false;
 	float timeVal = 0;
 	bool lockOnCar = false;
-	bool gtaEnabled = false;
-	bool orbitMode = false;
-	bool freecamMode = false;
+	int cameraMode = 0;
+	int velocity = 10;
+	Vector freecamPosition = { 0,0,0 };
 
 public:
 	void onLoad() override;
 	void onUnload() override;
 
+	// User defined functions
 	void CreateValues();
-	ServerWrapper GetCurrentGameState();
 	void RenderSettings() override;
-	void createFloatSlider(std::string cvarname, float min, float max, const char* label, std::string tooltip);
-	void createIntSlider(std::string cvarname, int min, int max, const char* label, std::string tooltip);
+	void orbitMode(CarWrapper car, CameraWrapper camera);
+	void windowMode(CarWrapper car, CameraWrapper camera);
+
+	std::pair<float, float> lookAt(Vector from, Vector to);
+
+	void createDragSlider(std::string cvarname, const char* label, float dragspeed, std::string tooltip);
+
+	// Template functions
 	void Initialize();
 	bool CanCreateValues();
 	bool IsCVarNull(std::string cvarName);
