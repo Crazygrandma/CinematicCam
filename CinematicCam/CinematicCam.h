@@ -22,8 +22,10 @@ private:
 	bool isInBallCam = false;
 	bool isInRearCam = false;
 	float timeVal = 0;
+	int switchInterval = 3;
 	bool lockOnCar = false;
-	int cameraMode = 0;
+	int cameraModeGUI = 0;
+	int currentMode = 0;
 	int velocity = 10;
 	Vector freecamPosition = { 0,0,0 };
 
@@ -36,6 +38,8 @@ public:
 	void RenderSettings() override;
 	void orbitMode(CarWrapper car, CameraWrapper camera);
 	void windowMode(CarWrapper car, CameraWrapper camera);
+	void trackcamMode(CarWrapper car, CameraWrapper camera);
+	void freecamMode(CarWrapper car, CameraWrapper camera);
 
 	std::pair<float, float> lookAt(Vector from, Vector to);
 

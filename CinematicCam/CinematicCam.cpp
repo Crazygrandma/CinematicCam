@@ -4,17 +4,20 @@
 #include <sstream>
 #include <filesystem>
 #include <cmath>
+#include <chrono>
 
 
 BAKKESMOD_PLUGIN(CinematicCam, "Cinematic Cam Plugin", "1.0", PLUGINTYPE_FREEPLAY)
 
 std::shared_ptr<CVarManagerWrapper> _globalCvarManager;
 
+
+auto lastTriggerTime = std::chrono::steady_clock::now();
 void CinematicCam::onLoad()
 {
 	_globalCvarManager = cvarManager;
 	Initialize();
-
+	lastTriggerTime = std::chrono::steady_clock::now();
 	cvarManager->registerCvar("cinematic_cam_enabled", "0", "Enable Cinematic Camera", true, true, 0, true, 1)
 		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
 		cvar.getBoolValue() ? Enable() : Disable();
@@ -25,22 +28,33 @@ void CinematicCam::onLoad()
 		lockOnCar = cvar.getBoolValue();
 			});
 
-	cvarManager->registerCvar("cinematic_camera_mode", "0", "Camera mode", true, true, 0, true, 2)
+	cvarManager->registerCvar("cinematic_camera_mode", "0", "Camera mode", true, true, 0)
 		.addOnValueChanged([this](std::string oldValue, CVarWrapper cvar) {
-		cameraMode = cvar.getIntValue();
+		cameraModeGUI = cvar.getIntValue();
 			});
 
 	cvarManager->registerCvar("CameraHeight", "500", "Set the height of the camera", true);
-	cvarManager->registerCvar("CameraDistance", "1000", "Set the distance relative to the car of the camera", true);
-	cvarManager->registerCvar("CameraOrbitSpeed", "0.10", "Set the speed of the camera", true);
+	cvarManager->registerCvar("CameraDistance", "1500", "Set the distance relative to the car of the camera", true);
+	cvarManager->registerCvar("CameraOrbitSpeed", "0.02", "Set the speed of the camera", true);
 
-	cvarManager->registerCvar("CameraFOV", "60", "Set the speed of the camera", true);
+	cvarManager->registerCvar("CameraFOV", "70", "Set the speed of the camera", true);
 
-	cvarManager->registerCvar("CameraXOffset", "0", "Set the xOffset of the camera", true);
-	cvarManager->registerCvar("CameraYOffset", "0", "Set the yOffset of the camera", true);
-	cvarManager->registerCvar("CameraZOffset", "0", "Set the zOffset of the camera", true);
+	cvarManager->registerCvar("CameraXOffset", "-40", "Set the xOffset of the camera", true);
+	cvarManager->registerCvar("CameraYOffset", "35", "Set the yOffset of the camera", true);
+	cvarManager->registerCvar("CameraZOffset", "25", "Set the zOffset of the camera", true);
+
+	cvarManager->registerCvar("CameraTrackX", "3800", "Set the xOffset of the camera", true);
+	cvarManager->registerCvar("CameraTrackY", "0", "Set the yOffset of the camera", true);
+	cvarManager->registerCvar("CameraTrackZ", "250", "Set the zOffset of the camera", true);
+
+	cvarManager->registerCvar("CameraX", "0", "Set the xOffset of the camera", true);
+	cvarManager->registerCvar("CameraY", "4000", "Set the yOffset of the camera", true);
+	cvarManager->registerCvar("CameraZ", "500", "Set the zOffset of the camera", true);
+
+	cvarManager->registerCvar("CameraPitchOffset", "0", "Set the pitchOffset of the camera", true);
+	cvarManager->registerCvar("CameraYawOffset", "0", "Set the yawOffset of the camera", true);
+	cvarManager->registerCvar("CameraRollOffset", "0", "Set the rollOffset of the camera", true);
 }
-
 
 
 void CinematicCam::CreateValues()
@@ -49,27 +63,98 @@ void CinematicCam::CreateValues()
 	CameraWrapper camera = gameWrapper->GetCamera();
 	if (!car.IsNull() && !camera.IsNull())
 	{
-		if (cameraMode == 0) {
+		if (cameraModeGUI == 0) {
 			orbitMode(car, camera);
 		}
-		if (cameraMode == 1) {
-			PlayerControllerWrapper controller = car.GetPlayerController();
-			if (!controller) {
-				return;
-			}
-			ControllerInput input = controller.GetVehicleInput();
-			car.SetVelocity({ 0,0,0 });
-
-			freecamPosition.X += -1 * input.Pitch * velocity;
-			freecamPosition.Y += input.Steer * velocity;
-			freecamPosition.Z += input.Throttle * velocity;
-
-			FOCUS = Vector{ freecamPosition.X, freecamPosition.Y, freecamPosition.Z };
+		if (cameraModeGUI == 1) {
+			freecamMode(car, camera);
 		}
-		if (cameraMode == 2) {
+		if (cameraModeGUI == 2) {
 			windowMode(car, camera);
 		}
+		if (cameraModeGUI == 3) {
+			trackcamMode(car, camera);
+		}
+		if (cameraModeGUI == 4) {
+			auto currentTime = std::chrono::steady_clock::now();
+			auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastTriggerTime).count();
+
+			switch (currentMode)
+			{
+			case 0: {
+				orbitMode(car, camera);
+				break;
+			}
+			//case 1: {
+			//	freecamMode(car, camera);
+			//	break;
+			//}
+			case 1: {
+				windowMode(car, camera);
+				break;
+			}
+			case 2: {
+				trackcamMode(car, camera);
+				break;
+			}
+			default:
+				break;
+			}
+
+
+			if (elapsedTime >= switchInterval) {
+				currentMode += 1;
+				if (currentMode == 3) {
+					currentMode = 0;
+				}
+				lastTriggerTime = currentTime;
+			}
+		}
 	}
+}
+
+void CinematicCam::freecamMode(CarWrapper car, CameraWrapper camera) {
+
+	float camX = cvarManager->getCvar("CameraX").getFloatValue();
+	float camY = cvarManager->getCvar("CameraY").getFloatValue();
+	float camZ = cvarManager->getCvar("CameraZ").getFloatValue();
+
+	Vector carLocation = car.GetLocation();
+
+	FOCUS = Vector{ camX,camY,camZ };
+
+	if (lockOnCar) {
+
+		auto [pitch, yaw] = lookAt(FOCUS, carLocation);
+		ROTATION = Rotator{ (int)(pitch), (int)(yaw), 0 };
+	}
+	else {
+
+		auto [pitch, yaw] = lookAt(FOCUS, Vector{0,0,0});
+		ROTATION = Rotator{ (int)(pitch), (int)(yaw), 0 };
+	}
+
+
+	DISTANCE = 0;
+	FOV = 60;
+}
+
+void CinematicCam::trackcamMode(CarWrapper car, CameraWrapper camera) {
+
+	float xOffset = cvarManager->getCvar("CameraTrackX").getFloatValue();
+	float yOffset = cvarManager->getCvar("CameraTrackY").getFloatValue();
+	float zOffset = cvarManager->getCvar("CameraTrackZ").getFloatValue();
+
+	Vector carLocation = car.GetLocation();
+
+	FOCUS = Vector{ xOffset,yOffset,zOffset };
+
+	auto [pitch, yaw] = lookAt(FOCUS, carLocation);
+	
+	ROTATION = Rotator{ (int)(pitch), (int)(yaw), 0 };
+
+	DISTANCE = 0;
+	FOV = 60;
 }
 
 void CinematicCam::windowMode(CarWrapper car, CameraWrapper camera) {
@@ -77,15 +162,24 @@ void CinematicCam::windowMode(CarWrapper car, CameraWrapper camera) {
 	float xOffset = cvarManager->getCvar("CameraXOffset").getFloatValue();
 	float yOffset = cvarManager->getCvar("CameraYOffset").getFloatValue();
 	float zOffset = cvarManager->getCvar("CameraZOffset").getFloatValue();
+
+	float pitchOffset = cvarManager->getCvar("CameraPitchOffset").getIntValue();
+	float yawOffset = cvarManager->getCvar("CameraYawOffset").getIntValue();
+	float rollOffset = cvarManager->getCvar("CameraRollOffset").getIntValue();
+
+
 	float fov = cvarManager->getCvar("CameraFOV").getIntValue();
 
 
 	Vector carLocation = car.GetLocation();
 	Rotator carRotation = car.GetRotation();
+	ServerWrapper server = gameWrapper->GetCurrentGameState();
+	BallWrapper ball = server.GetBall();
+	Vector ballLocation = ball.GetLocation();
 
-	float rotationYaw = carRotation.Yaw * 3.14 / 32768;
-	float rotationPitch = carRotation.Pitch * 3.14 / 32768;
-	float rotationRoll = carRotation.Roll * 3.14 / 32768;
+	float rotationYaw = carRotation.Yaw * 3.14159 / 32768;
+	float rotationPitch = carRotation.Pitch * 3.14159 / 32768;
+	float rotationRoll = carRotation.Roll * 3.14159 / 32768;
 
 	// Calculate camera position relative to car's orientation
 	float camPosX = carLocation.X +
@@ -105,11 +199,14 @@ void CinematicCam::windowMode(CarWrapper car, CameraWrapper camera) {
 
 	FOCUS = Vector{ camPosX,camPosY,camPosZ };
 
-	/*FOCUS.X = carLocation.X + xOffset * cos(rotation) - yOffset * sin(rotation);
-	FOCUS.Y = carLocation.Y + xOffset * sin(rotation) + yOffset * cos(rotation);
-	FOCUS.Z = carLocation.Z + zOffset;*/
-
-	ROTATION = Rotator{ carRotation.Pitch, carRotation.Yaw, carRotation.Roll };
+	if (isInBallCam) {
+		auto [pitch, yaw] = lookAt(FOCUS, ballLocation);
+		ROTATION = Rotator{ (int)(pitch), (int)(yaw), (int)(rollOffset) };
+	}
+	else
+	{
+		ROTATION = Rotator{ (int)(carRotation.Pitch + pitchOffset), (int)(carRotation.Yaw + yawOffset), (int)(carRotation.Roll + rollOffset) };
+	}
 
 	DISTANCE = 0;
 	FOV = fov;
@@ -124,6 +221,9 @@ void CinematicCam::orbitMode(CarWrapper car, CameraWrapper camera) {
 
 	ProfileCameraSettings camSettings = camera.GetCameraSettings();
 	Vector carLocation = car.GetLocation();
+	ServerWrapper server = gameWrapper->GetCurrentGameState();
+	BallWrapper ball = server.GetBall();
+	Vector ballLocation = ball.GetLocation();
 
 	float newX = distance * cos(timeVal * 3.14 / 180.0);
 	float newY = distance * sin(timeVal * 3.14 / 180.0);
@@ -132,10 +232,20 @@ void CinematicCam::orbitMode(CarWrapper car, CameraWrapper camera) {
 
 	auto [pitch, yaw] = lookAt(camPos, Vector{0,0,0});
 	if (lockOnCar) {
+
+		if (isInBallCam) {
+			auto [pitch, yaw] = lookAt(camPos, ballLocation);
+			camPos.X += ballLocation.X;
+			camPos.Y += ballLocation.Y;
+			camPos.Z += ballLocation.Z;
+		}
+		else{
 		camPos.X += carLocation.X;
 		camPos.Y += carLocation.Y;
 		camPos.Z += carLocation.Z;
 		auto [pitch, yaw] = lookAt(camPos, carLocation);
+		}
+
 	}
 
 	FOCUS = Vector{ camPos.X , camPos.Y, camPos.Z};
@@ -156,8 +266,8 @@ std::pair<float,float> CinematicCam::lookAt(Vector from, Vector to) {
 	float dy = to.Y - from.Y;
 	float dz = to.Z - from.Z;
 
-	float pitch = atan2(dz, sqrt(dx * dx + dy * dy)) * 32768.0 / 3.14;
-	float yaw = atan2(dy, dx) * 32768.0 / 3.14;;
+	float pitch = atan2(dz, sqrt(dx * dx + dy * dy)) * 32768.0 / 3.14159;
+	float yaw = atan2(dy, dx) * 32768.0 / 3.14159;;
 	return std::make_pair(pitch, yaw);
 }
 

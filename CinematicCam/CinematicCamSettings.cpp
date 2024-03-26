@@ -26,13 +26,17 @@ void CinematicCam::RenderSettings() {
         return;
     }
 
-    ImGui::RadioButton("Orbit Mode", &cameraMode, 0);
+    ImGui::RadioButton("Orbit Mode", &cameraModeGUI, 0);
     ImGui::SameLine();
-    ImGui::RadioButton("Freecam Mode", &cameraMode, 1);
+    ImGui::RadioButton("Freecam Mode", &cameraModeGUI, 1);
     ImGui::SameLine();
-    ImGui::RadioButton("Window Mode", &cameraMode, 2);
+    ImGui::RadioButton("Window Mode", &cameraModeGUI, 2);
+    ImGui::SameLine();
+    ImGui::RadioButton("Trackcam Mode", &cameraModeGUI, 3);
+    ImGui::SameLine();
+    ImGui::RadioButton("Switching Mode", &cameraModeGUI, 4);
 
-    if (cameraMode == 0) {
+    if (cameraModeGUI == 0) {
         CVarWrapper enableCarLockCvar = cvarManager->getCvar("cam_car_lock");
         if (!enableCarLockCvar) { return; }
         bool enabledCarLock = enableCarLockCvar.getBoolValue();
@@ -47,15 +51,49 @@ void CinematicCam::RenderSettings() {
         createDragSlider("CameraDistance", "Distance", 0.1f,"distance is");
         createDragSlider("CameraOrbitSpeed", "Speed", 0.01f,"Orbit speed is");
     }
-    if (cameraMode == 1) {
+    if (cameraModeGUI == 1) {
 
+        CVarWrapper enableCarLockCvar = cvarManager->getCvar("cam_car_lock");
+        if (!enableCarLockCvar) { return; }
+        bool enabledCarLock = enableCarLockCvar.getBoolValue();
+        if (ImGui::Checkbox("Lock on car", &enabledCarLock)) {
+            enableCarLockCvar.setValue(enabledCarLock);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lock on car");
+        }
+
+        createDragSlider("CameraX", "X", 10, "X is");
+        createDragSlider("CameraY", "Y", 10, "Y is");
+        createDragSlider("CameraZ", "Z", 10, "Z is");
     }
-    if (cameraMode == 2) {
+    if (cameraModeGUI == 2) {
 
         createDragSlider("CameraFOV", "FOV", 1, "fov is");
+
         createDragSlider("CameraXOffset", "xOffset", 0.1f, "xOffset is");
         createDragSlider("CameraYOffset", "yOffset", 0.1f, "yOffset is");
         createDragSlider("CameraZOffset", "zOffset", 0.1f, "zOffset is");
+
+        createDragSlider("CameraPitchOffset", "PitchOffset", 1, "PitchOffset is");
+        createDragSlider("CameraYawOffset", "YawOffset", 1, "YawOffset is");
+        createDragSlider("CameraRollOffset", "RollOffset", 1, "RollOffset is");
+    }
+    if (cameraModeGUI == 3) {
+        createDragSlider("CameraTrackX", "xOffset", 1, "xOffset is");
+        createDragSlider("CameraTrackY", "yOffset", 1, "yOffset is");
+        createDragSlider("CameraTrackZ", "zOffset", 1, "zOffset is");
+    }
+    if (cameraModeGUI == 4) {
+        CVarWrapper enableCarLockCvar = cvarManager->getCvar("cam_car_lock");
+        if (!enableCarLockCvar) { return; }
+        bool enabledCarLock = enableCarLockCvar.getBoolValue();
+        if (ImGui::Checkbox("Lock on car", &enabledCarLock)) {
+            enableCarLockCvar.setValue(enabledCarLock);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lock on car");
+        }
     }
 }
 
